@@ -1,0 +1,6 @@
+matplotlib==3.10.6
+numpy==2.3.3
+pennylane==0.42.0
+scipy==1.16.2
+torch==2.3.1
+tqdm==4.67.1
