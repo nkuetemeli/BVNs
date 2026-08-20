@@ -1,16 +1,25 @@
-from collections import defaultdict, Counter
-
-import matplotlib.pyplot as plt
 import numpy as np
-import torch
-import torchvision.transforms as T
+import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
-from scipy.signal import resample
-from skimage import io
-from skimage.color import rgb2gray
-from skimage.transform import resize
+
 from sklearn.datasets import make_moons, make_circles, make_blobs, load_iris
 from sklearn.preprocessing import MinMaxScaler
+
+from skimage.color import rgb2gray
+from skimage.transform import resize
+from skimage import io
+
+import torch
+import torchvision.transforms as T
+
+import numpy as np
+from scipy.signal import resample
+from collections import defaultdict, Counter
+
+import numpy as np
+import itertools
+
+from collections import defaultdict, Counter
 
 
 # ================================================================
@@ -21,6 +30,32 @@ def convert_to_grid(X, scale):
     scaler = MinMaxScaler(feature_range=(0, scale))
     X_scaled = scaler.fit_transform(X)
     return np.round(X_scaled).astype(int)
+
+
+def fill_hyper_grid(X, y, scale, dummy_fill=None):
+    if dummy_fill is None or dummy_fill[0] == 0 or not 0 <= dummy_fill[1] <= 1:
+        return X, y
+
+    dummy_value, percentage = dummy_fill
+
+    grid_axis = [int(i) for i in range(int(scale) + 1)]
+    all_possible_points = np.array(list(itertools.product(grid_axis, repeat=X.shape[1])), dtype=np.int64)
+    set_all = {tuple(int(v) for v in p) for p in all_possible_points.tolist()}
+    set_existing = {tuple(int(v) for v in p) for p in X.tolist()}
+    set_remaining = set_all - set_existing
+    remaining_points = np.array(list(set_remaining))
+
+    num_to_sample = int(np.ceil(len(remaining_points) * percentage))
+    sampled_indices = np.random.choice(len(remaining_points), size=num_to_sample, replace=False)
+    dummy_points = remaining_points[sampled_indices]
+    dummy_labels = np.full(len(dummy_points), dummy_value, dtype=y.dtype)
+
+    X_final = np.vstack((X, dummy_points))
+    y_final = np.concatenate((y, dummy_labels))
+
+    return X_final, y_final
+
+
 
 def clean_dataset(X, y, strategy="majority", verbose=True):
     """
@@ -93,7 +128,9 @@ def plot(X, y, X_full=None, y_full=None, y_full_pred=None, accuracy=None, vmin=-
         plt.legend()
         plt.show()
     if X.ndim == 2 and X.shape[1] == 2:
-        cbar = axes.scatter(*X.T, c=y, label="fitted")
+        cmap = "RdBu_r"
+
+        cbar = axes.scatter(*X.T, c=y, label="fitted", cmap=cmap)
         axes.set_title(title)
 
         axes.set_title(f"accuracy = {round(accuracy, 2) if accuracy is not None else 'None'}, "+title)
@@ -122,6 +159,7 @@ def plot(X, y, X_full=None, y_full=None, y_full_pred=None, accuracy=None, vmin=-
         cax = fig.add_axes([.91, 0.11, 0.02, 0.77])
         fig.colorbar(cbar, cax=cax)
         plt.show()
+
 
 
 def round_to_labels_acc(y_pred, y, labels):
@@ -356,19 +394,19 @@ def load_image(scale, bv_model=False):
         colors_fine = torch.tensor(colors_fine, dtype=torch.float32).unsqueeze(0)
     return img_coarse, img_fine, (coords_coarse, colors_coarse), (colors_fine, coords_fine)
 
+
 # ================================================================
 #  DEMO
 # ================================================================
-
 if __name__ == "__main__":
     # Generate and visualize datasets
-    shapes = {1: 'moons', 2: 'blobs', 3: 'sk_circles', 4: 'circle', 5: 'cross', 6: 'checkerboard',
+    shapes = {0: 'promise', 1: 'moons', 2: 'blobs', 3: 'sk_circles', 4: 'circle', 5: 'cross', 6: 'checkerboard',
               7: 'diamond', 8: 'h_stripes', 9: 'v_stripes', 10: 'spiral', 11: 'permutation', 12: 'relu', 13: 'random',
               20: 'penguins',
               21: 'iris',
               22: '1d'}
-    shape = shapes[2]
+    shape = shapes[21]
 
-    X, y, X_target, y_target, rand_vec = load_dataset(shape, scale=31)
-    plot(X, y, X_target, y_target)
+    X, y, X_target, y_target, rand_vec = load_dataset(shape, scale=15)
+    plot(X, y, X_full=X_target, y_full=y_target, y_full_pred=y_target, vmin=y.min(), vmax=y.max())
 

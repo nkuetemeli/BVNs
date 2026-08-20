@@ -1,8 +1,6 @@
 from dataset import *
 
-from trunk.src.BVNets.cheap_relu import *
-from trunk.src.BVNets.cheap_sigmoid import *
-from trunk.src.BVNets.modulo import *
+from utils_relu import *
 
 
 class BVUnit:
@@ -53,19 +51,6 @@ class BVUnit:
             print(f'Using threshold {threshold}')
             CheapReLU(x1_wires, x2_wires, y1_wires, y2_wires, [ancilla_wires[0]], sigma_wires)
             self.activation_fn = lambda z: np.where(z < threshold, z, 0).astype(int)
-
-        elif self.activation == 'Sigmoid':
-            threshold = int(2 ** (sum(len(i) for i in input_wires) / len(input_wires)))
-            threshold = self.activation_params.get('threshold', threshold)
-            print(f'Using threshold {threshold}')
-            CheapSigmoid(input_wires, self.weight_wires, sigma_wires, ancilla_wires, threshold=threshold)
-            self.activation_fn = lambda z: np.where(z < threshold, 1, 0).astype(int)
-
-        if self.activation == 'Modulo':
-            modulo = self.activation_params.get('modulo', 2 ** len(self.out_wires))
-            print(f'Using modulo {modulo}')
-            Modulo(input_wires, self.weight_wires, sigma_wires, ancilla_wires, modulo=modulo)
-            self.activation_fn = lambda z: z % modulo
 
 
 class BVLayer:
@@ -142,6 +127,3 @@ class BVLayer:
         print(f"  Total wires in layer: {self.total_wires()}")
         for u in self.units:
             u.describe()
-
-
-

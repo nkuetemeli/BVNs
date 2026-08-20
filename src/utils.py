@@ -1,30 +1,13 @@
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
 import pennylane as qml
+from pennylane.operation import Operation
 
+
+import numpy as np
 
 def uniform_state(n, bitstrings, y=None):
-    """
-    Prepare a superposition of the provided bitstrings.
-
-    Parameters
-    ----------
-    n : int
-        Total number of qubits / bits in the register.
-    bitstrings : list of str
-        List of bitstrings to be included in the superposition.
-        Each bitstring should be a string of 0s and 1s.
-    y : np.ndarray or list, optional
-        If provided, encode the values as amplitudes instead of uniform.
-        Length must match len(bitstrings).
-
-    Returns
-    -------
-    state_vector : np.ndarray
-        Complex state vector of size 2**n, normalized to unit norm.
-    """
-
-    state_vector = 4+np.zeros(2 ** n, dtype=complex)
+    state_vector = np.zeros(2 ** n, dtype=complex)
 
     if y is None:
         # Uniform superposition
@@ -42,7 +25,6 @@ def uniform_state(n, bitstrings, y=None):
     # Normalize the state vector
     state_vector /= np.linalg.norm(state_vector)
     return state_vector
-
 
 def bits_to_int(bits):
     """
@@ -89,14 +71,7 @@ def interference_fn_vec(interference, a, bits):
     return result.reshape(a.shape[0], bits.shape[0])
 
 
-
-
-
-
-
-
-
-def basis_functions_from_matrix(chi_eval, y, gram_scalar=.1):
+def basis_functions_from_matrix(chi_eval, y, gram_inversion=True, gram_scalar=.1):
     """
     Vectorised version of basis_functions(), expecting:
 
@@ -113,20 +88,29 @@ def basis_functions_from_matrix(chi_eval, y, gram_scalar=.1):
     N_points, N_chi = chi_eval.shape
     Fhat = chi_eval.T @ y[:, None]   # (N_chi, 1)
 
-    G = chi_eval.T @ chi_eval     # (N_chi, N_chi)
-    G = G + gram_scalar * np.eye(N_chi)
-    coeffs = (np.linalg.inv(G) @ Fhat).flatten()
-    b = 0.0
+    if gram_inversion:
+        G = chi_eval.T @ chi_eval     # (N_chi, N_chi)
+        G = G + gram_scalar * np.eye(N_chi)
+        coeffs = (np.linalg.inv(G) @ Fhat).flatten()
+        b = 0.0
+
+    else:
+        # Same logic as your original closed-form LS with intercept.
+        XFhat = chi_eval @ Fhat            # (N_points, 1)
+        F = y[:, None]
+        ones = np.ones_like(F)
+
+        den = (ones.T @ ones) * np.sum(XFhat ** 2) - np.sum(XFhat.T @ ones) ** 2
+        s = XFhat.T @ ((ones.T @ ones) * F - (ones @ ones.T) @ F) / den if den > 1e-12 else 1.0
+        b = ((ones.T @ F - s * ones.T @ XFhat) / (ones.T @ ones)).item()
+
+        coeffs = (s * Fhat).flatten()
 
     # Return only coefficients; χ functions are now vectorised
     return {
         "coeffs": coeffs,     # shape (N_chi,)
         "bias": b
     }
-
-
-
-
 
 
 class Chebyshev(qml.operation.Operation):
@@ -252,7 +236,7 @@ if __name__ == '__main__':
     @qml.qnode(dev, interface="torch")
     def circuit2(n):
         Chebyshev(ancilla_wire=0, wires=list(range(1, n+1)))  # Apply the Chebyshev circuit
-        return qml.expval(qml.prod(*[qml.PauliZ(i) for i in range(1, n+1)]))
+        return qml.expval(qml.operation.Tensor(*[qml.PauliZ(i) for i in range(1, n+1)]))
 
     fig, ax = qml.draw_mpl(circuit)(n)
     plt.show()

@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-
 import pennylane as qml
 
 
@@ -32,7 +31,6 @@ class CheapReLU(qml.operation.Operation):
         op_list = []
 
         # Overflow detector
-
         op_list.append(
             qml.ctrl(qml.OutMultiplier(x_wires=x2_wires, y_wires=y2_wires, output_wires=ancilla_wire+x1_wires),
                      control=y1_wires, control_values=[1])
@@ -100,7 +98,8 @@ if __name__ == "__main__":
     # Device
     n, k, l = 2, 1, 1
     total_wires = 2*n + 2*k + l + 1  # +1 for flag
-    dev = qml.device("default.qubit", wires=total_wires, shots=1024)
+    shots = 1024
+    dev = qml.device("default.qubit", wires=total_wires)
 
 
     # Wire assignment
@@ -122,6 +121,7 @@ if __name__ == "__main__":
         CheapReLU(x1_wires, x2_wires, y1_wires, y2_wires, ancilla_wire, sigma_wires).decomposition()
 
         return qml.counts()
+    circuit = qml.set_shots(circuit, shots=shots)
 
     # Visualize the circuit
     print(qml.draw_mpl(circuit)())

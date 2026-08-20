@@ -1,5 +1,9 @@
+import random
+
 from bvn_relu_layers import *
 from utils import *
+from utils_relu import *
+from qiskit_aer.noise import NoiseModel, depolarizing_error, ReadoutError, phase_damping_error
 
 
 class BVNModelClAct:
@@ -19,9 +23,22 @@ class BVNModelClAct:
         self.interference_wires = [*self.input_wires] + ([*self.hidden_layer.activation_wires, self.output_layer._activation_wires] if not self.standard_BV else [])
         self._meas = None
 
-    def circuit(self, state_vector):
+    def circuit(self, state_vector, inputs):
         # Superposition of inputs
         qml.StatePrep(state_vector, wires=self._input_wires)
+
+        # Ancilla preparation
+        qml.X(wires=self.ancilla_wires[0])
+        qml.Hadamard(wires=self.ancilla_wires[0])
+
+        # Black-box call
+        for input in inputs:
+            control_values = [int(x) for x in input]
+            qml.ctrl(qml.X, control=self._input_wires, control_values=control_values)(wires=self.ancilla_wires[0])
+
+        # Ancilla un-computation
+        qml.Hadamard(wires=self.ancilla_wires[0])
+        qml.X(wires=self.ancilla_wires[0])
 
         if not self.standard_BV:
             # Superposition of hidden and outpout weights
@@ -45,8 +62,15 @@ class BVNModelClAct:
         return qml.counts()
 
 
-    def run(self, dev, state_vector):
-        qnode = qml.QNode(lambda: self.circuit(state_vector), dev)
+    def run(self, dev, state_vector, inputs, shots, noise=False):
+        if noise:
+            circuit = qml.transforms.decompose(
+                self.circuit, gate_set={"Hadamard", "PauliX", "PauliY", "PauliZ", "RX", "RY", "RZ", "CNOT", "CZ", },
+            )
+        else:
+            circuit = self.circuit
+        qnode = qml.QNode(lambda: circuit(state_vector, inputs), dev)
+        qnode = qml.set_shots(qnode, shots=shots)
         return qnode()
 
     def compute_chi_matrix(self, X):
@@ -117,8 +141,15 @@ class BVNModelClAct:
         # Vectorised χ-matrix
         chi_eval = self.compute_chi_matrix(X)
 
-        # Solve classically
-        return basis_functions_from_matrix(chi_eval, y, gram_scalar)
+        # classical linear solve
+        results = basis_functions_from_matrix(chi_eval, y, gram_scalar)
+        indices = np.abs(results['coeffs']).argsort()[::-1]
+        results['coeffs'] = results['coeffs'][indices]
+        self._meas["input_bits"] = input_bits[indices]
+        self._meas["hidden_bits"] = hidden_bits[indices]
+        self._meas["output_bits"] = output_bits[indices]
+        return results
+
 
     def predict(self, X_new, results):
         chi = self.compute_chi_matrix(X_new)
@@ -134,33 +165,57 @@ if __name__ == '__main__':
               22: '1d'}
     shape = shapes[3]
     n_qubits = 4
-    percentage = 50
+    percentage = 75
+    dummy_fill = (0, 0)
 
+    interferences = {0: 'Hadamard', 1: 'Fourier', 2: 'Chebyshev',}
+    interference = interferences[2]
+    activation = 'ReLU'
+    modes = {0: None, 1: 'noise', 2: 'random'}
+    mode = modes[0]
+
+    noise_model = NoiseModel()
+    noise_model.add_all_qubit_quantum_error(depolarizing_error(0.005, 1), ["h", "x", "rz", "ry", "u"])
+    noise_model.add_all_qubit_quantum_error(depolarizing_error(0.02, 2), ["cx", ])
+    noise_model.add_all_qubit_readout_error(ReadoutError([[0.98, 0.02], [0.02, 0.98]]))
+
+    # Visualise training data
     scale = 2 ** n_qubits - 1
     X, y, X_full, y_full, _ = load_dataset(name=shape, scale=scale, percentage=percentage)
+    X_filled, y_filled = fill_hyper_grid(X, y, scale, dummy_fill=dummy_fill)
     plot(X, y, X_full=X_full, y_full=y_full, y_full_pred=y_full, vmin=y.min(), vmax=y.max())
 
-    x_list = [''.join([np.binary_repr(a, width=n_qubits) for a in x]) for x in X]
+    # Oracle encoding in noise simulation, on binary classification only, otherwise amplitude encoding
+    x_list = [''.join([np.binary_repr(a, width=n_qubits) for a in x]) for x in X_filled]
+    amplitude_encoding = (shape in ['penguins', 'iris', '1d'] or not (mode == 'noise' and shape not in ['penguins', 'iris', '1d']))
 
-    amplitude_encoding = True
     if amplitude_encoding:
-        state_vector = uniform_state(len(x_list[0]), x_list, y=y)
+        state_vector = uniform_state(len(x_list[0]), x_list, y=y_filled)
         inputs = []
     else:
         state_vector = uniform_state(len(x_list[0]), x_list, y=None)
-        input = [x for x, label in zip(x_list, y) if label == 1]
-
-    interference = {0: 'Hadamard', 1: 'Fourier', 2: 'Chebyshev', }
-    activation = {0: 'ReLU', 1: 'Modulo', 2: 'Sigmoid'}
+        inputs = [x for x, label in zip(x_list, y_filled) if label == 1]
 
     for standard_BV in [True, False]:
-        bv_model = BVNModelClAct(n_qubits_input=n_qubits, in_dim=X.shape[1], activation=activation[2], interference=interference[2], standard_BV=standard_BV)
-        dev = qml.device('lightning.qubit', wires=bv_model.ancilla_wires[-1]+1, shots=100)
-        counts = bv_model.run(dev, state_vector)
+        bv_model = BVNModelClAct(n_qubits_input=n_qubits, in_dim=X.shape[1], activation=activation, interference=interference, standard_BV=standard_BV)
+        if mode is None:
+            dev = qml.device('lightning.qubit', wires=bv_model.ancilla_wires[-1] + 1)
+            counts = bv_model.run(dev, state_vector, inputs, shots=100)
+        if mode == 'noise':
+            dev = qml.device("qiskit.aer", wires=bv_model.ancilla_wires[-1] + 1, backend="aer_simulator", noise_model=noise_model)
+            counts = bv_model.run(dev, state_vector, inputs, shots=100, noise=True)
+        if mode == 'random':
+            dev = qml.device('lightning.qubit', wires=bv_model.ancilla_wires[-1] + 1)
+            counts = bv_model.run(dev, state_vector, inputs, shots=100)
+            if standard_BV:
+                l_effective = bv_model._input_wires[-1] + 1
+                counts = {"".join(random.choices(["0", "1"], k=l_effective) + ['0'] * (len(x) - l_effective)): 0 for x in counts}
+            else:
+                counts = {"".join(random.choices(["0", "1"], k=len(x))): 0 for x in counts}
 
-        # if n_qubits < 5:
-        #     qml.draw_mpl(bv_model.circuit)(state_vector, inputs=inputs)
-        #     plt.show()
+        if n_qubits < 5:
+            qml.draw_mpl(bv_model.circuit)(state_vector, inputs=inputs)
+            plt.show()
 
         results = bv_model.get_function_from_counts(counts, X, y, gram_scalar=.1)
         title = f'{"Std." if standard_BV else "Gen."} BVN'
@@ -175,5 +230,5 @@ if __name__ == '__main__':
         # Full domain, real
         X_full_new = np.random.uniform(0, 2**n_qubits-1, (1024, X.shape[1]))
         y_pred_new = bv_model.predict(X_full_new, results)
-        plot(X_full_new, y_pred_new, vmin=y.min(), vmax=y.max())
+        plot(X_full_new, y_pred_new, vmin=y.min(), vmax=y.max(), title=title)
 

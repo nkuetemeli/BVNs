@@ -1,6 +1,11 @@
-matplotlib==3.10.6
-numpy==2.3.3
-pennylane==0.42.0
-scipy==1.16.2
-torch==2.3.1
-tqdm==4.67.1
+matplotlib==3.8.3
+numpy==2.5.2
+pandas==3.0.5
+pennylane==0.44.1
+qiskit_aer==0.17.2
+scikit_learn==1.9.0
+scipy==1.18.0
+seaborn==0.13.2
+skimage==0.0
+torch==2.3.0
+torchvision==0.18.0

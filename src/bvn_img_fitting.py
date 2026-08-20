@@ -36,8 +36,8 @@ if __name__ == '__main__':
         tic = time.time()
 
         bv_model = BVNModelMask(n_qubits_input=n_qubits, in_dim=X.shape[1], mask_resolution=5, interference=interference[2], standard_BV=standard_BV)
-        dev = qml.device('lightning.qubit', wires=bv_model.ancilla_wires[-1]+1, shots=10000)
-        counts = bv_model.run(dev, state_vector)
+        dev = qml.device('lightning.qubit', wires=bv_model.ancilla_wires[-1]+1)
+        counts = bv_model.run(dev, state_vector, inputs=[], shots=10000)
 
         # if n_qubits < 5:
         #     qml.draw_mpl(bv_model.circuit)(state_vector, inputs=inputs)
@@ -83,4 +83,8 @@ if __name__ == '__main__':
         ax.imshow(np.hstack([img_fine, np.clip(pred_img_fine, 0, 1)]), cmap='bone')
         ax.set_title("Fine: True vs Reconstructed", fontsize=14)
         ax.axis('off')
+
+
+        title = f'{"Std." if standard_BV else "Gen."} BVN'
+        fig.suptitle(title, fontsize=14)
         plt.show()

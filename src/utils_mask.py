@@ -1,8 +1,12 @@
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 import pennylane as qml
+from pennylane import numpy as np
+import matplotlib.pyplot as plt
 from matplotlib.colors import BoundaryNorm, ListedColormap
+
+import pennylane as qml
+import numpy as np
+
+import pandas as pd
 
 
 class CheapMask(qml.operation.Operation):
@@ -113,12 +117,13 @@ if __name__ == "__main__":
     b_y = 3      # bits per y_i
     b_superposition = 1  # bits for shared sigma
     b_sigma = 1  # bits for shared sigma
+    shots = 2000000
 
     total_x = d * b_x
     total_y = d * b_y
     total_wires = total_x + total_y + b_superposition + b_sigma
 
-    dev = qml.device("default.qubit", wires=total_wires, shots=2000000)
+    dev = qml.device("default.qubit", wires=total_wires)
 
     # assign sub-registers
     x_wires = [list(range(i*b_x, (i+1)*b_x)) for i in range(d)]
@@ -134,7 +139,6 @@ if __name__ == "__main__":
             for w in wires:
                 qml.Hadamard(w)
 
-
         # accumulate each dimension into the same sigma register
         CheapMask(
             x_wires=x_wires,
@@ -142,8 +146,9 @@ if __name__ == "__main__":
             superposition_wire=superposition_wire,
             sigma_wire=sigma_wire,
         )
-
         return qml.counts()
+    circuit = qml.set_shots(circuit, shots=shots)
+
 
 
     # draw circuit
@@ -207,10 +212,9 @@ if __name__ == "__main__":
             shape = [2 ** b_x for _ in range(d)] + ([1] if d==1 else [])
             ax.imshow(S_vals.reshape(shape), origin='lower', cmap=cmap, norm=norm)
             ax.set_title(f"t={Y}, s={s}", fontsize=18)
-            ax.set_xticks([]);
+            ax.set_xticks([])
             ax.set_yticks([])
 
         fig.suptitle(f"s register value = {s}", fontsize=40)
         plt.tight_layout()
-        plt.savefig(f'results/augmented_basis_mask_{s}.pdf')
         plt.show()
