@@ -18,7 +18,7 @@ Experiments on synthetic and real-world classification tasks, as well as implici
 
 <div align="center">
 	<img src="images/bvns.png" alt="BVNs" width="400" class="center"/>
-	<img src="images/bvn_circuits.png" alt="BVN Circuits" width="400" class="center"/>
+	<img src="images/bvn_circuits.png" alt="BVN Circuits" width="800" class="center"/>
 </div>
 
 # Install
